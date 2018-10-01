@@ -1,0 +1,103 @@
+//Kings Gate Campground Solar Controller Tracker
+//Programing and Design by GJB 2018
+//LDR4 is stand alone 12v sensor contact that operates off day night status it measures.
+//The lower the LDR value the darker it is. Ambient light = 
+                                   
+const int forwards = 6;    // Relay 1 // 5v relay digital pin 6 only available durring day time (LDR controling data signal flow).
+const int backwards = 8;   // Relay 2 // 5v relay digital pin 8 only, power to actuator controlled by Day/Night Timer, through FWD REV Relay 2
+const int sensor_west_pin1 = A5;         // Analog I/O A5 pin1 west
+const int sensor_east_pin3 = A3;         // Analog I/O A3 pin3 east
+const int sensor_center_pin2 = A4;       // Analog I/O A4 pin2 center
+
+int sensor_west[20];              // 20 sample readings from sensor on the west side
+int sensor_east[20];              // 20 sample readings from sensor on the east side
+//int sensor_center[10];            // 10 sample readings from sensor on the center sensor
+int reset_counter = 0;            // Time counter for resetting the solar panel position
+const int sample_time_interval = 10000;     // Change this value to set the interval between each sample is taken (ms)
+const int solar_panel_adjustment_interval = 30000; // Change this value to set the interval between each adjustment from the solar panel (ms)
+
+void setup()
+{
+
+pinMode(forwards, OUTPUT);     //set relay 1 as an output only active when man timer relay "IS Energized"
+pinMode(backwards, OUTPUT);    //set relay 2 as an output only active when manual timer relay "Is NOT Energized".
+Serial.begin(9600);            //  setup serial
+pinMode(sensor_west_pin1, INPUT);     // Set sensor west pin to input
+pinMode(sensor_east_pin3, INPUT);     // Set sensor east pin to input
+pinMode(sensor_center_pin2, INPUT);   // Set sensor center pin to input
+  
+}
+
+void loop() 
+{
+
+ digitalWrite(forwards, HIGH);   //Deactivate forward 5V relay (off)
+ digitalWrite(backwards,HIGH);   //Deactivate backwards 5V relay (off)
+ delay(10000);// wait  10 seconds
+
+ int solar_input_west = 0;           // Sun light intensity values from sensor west
+ int solar_input_east = 0;           // Sun light intensity values from sensor east
+ int solar_input_center = 0;         // Sun light intensity values from sensor center
+
+  for( int i=0; i<21; i++) //collecting 20 samples at intervals based on sample_time_interval setting (default is 10 seconds)
+  {   
+    sensor_west[i] = analogRead(sensor_west_pin1);              // Taking the analog readings from sensor west
+    sensor_east[i] = analogRead(sensor_east_pin3);              // Taking the analog readings from sensor east
+   // sensor_center[i] = analogRead(sensor_center_pin2);          // Taking the analog readings from sensor center
+    solar_input_west = sensor_west[i] + solar_input_west;       // Sum all the inputs from sensor west
+    solar_input_east = sensor_east[i] + solar_input_east;       // Sum all the inputs from sensor east
+   // solar_input_center = sensor_center[i] + solar_input_center; // Sum all the inputs from sensor center
+    delay(sample_time_interval);
+   } 
+   // Twenty samples taken 10 seconds apart and averaged then LDR correction factor applied.
+   solar_input_west = (solar_input_west) / 20 + 53;  // The the average of input signals from sensor west adjusted with LDR cal value (+53)
+   solar_input_east = (solar_input_east) / 20 - 53;   // The the average of input signals from sensor east adjusted with LDR cal Value (-53)
+   //solar_input_center = (solar_input_center) / 10;   // The the average of input signals from sensor center adjusted with LDR cal Value (N/A)
+   {
+   //LDR values are available through serial monitors. 
+   Serial.print("solar_input_west=");
+   Serial.println(solar_input_west);
+   Serial.print("solar_input_east= ");
+   Serial.println(solar_input_east); 
+   // Serial.print("solar_input_center= ");
+   //Serial.println(solar_input_center);
+   }
+  
+  if((solar_input_west - solar_input_east > 60) && (solar_input_east > 375 ))  //also requires permissive from LDR4 (daytime light sensor with contact) .
+   {
+    digitalWrite(forwards, LOW);     //Activate actuator to move west (5v relay 1) permissive required by LDR 4.
+    digitalWrite(backwards, HIGH);   //Set relay 2 to off.
+    delay(750); // wait 750 mili seconds(= approx 1/4" actuator travel),actuator extends panels move to the west.
+    digitalWrite(forwards, HIGH);    //Set relay 1 to off.
+    digitalWrite(backwards, HIGH);   //Set relay 2 to off.
+    delay(10000);// wait 10 seconds
+    return 0; // if this statement is true return to beginning of loop until east west LDR diff is <60,this only works if day/night timer is active on (red indicater light is on).
+    //If false continue to next step below
+   } 
+
+    else if((solar_input_west - solar_input_east < 60) && (solar_input_east > 400)) // east west diff ok start 1/2 hour wait to check east west diff again.
+     {
+       delay(1800000);    // If pointing at sun wait 1/2 hour. (1800000 milsec).  
+       return 0;    //return to top of loop to check sensors again daylight (east < 50 ) is permissive. if night continues through rest of code below.
+     }
+
+     else
+     {
+      // safe to continue.
+     }
+    
+ if((solar_input_east < 375) && (solar_input_west < 375))  //Returns panels to east start point if east LDR and LDR west both indicated night <=(375 -)
+  {
+    digitalWrite(forwards, HIGH);    //Relay 1 is off
+    digitalWrite(backwards, LOW);    //Activate actuator to move east (5v relay 2).
+    delay(60000);    //actuator retracted for 1 min to return it to morning start position. 
+  }
+ 
+ if((solar_input_east < 375) && (solar_input_west < 375)) //if all light sensors indicate night, start  
+  {
+    digitalWrite(forwards, HIGH);//Deactivate all 2 relays until morning sunrise using all 3 LDR status for a permissive
+    digitalWrite(backwards, HIGH);
+    delay(18000000); // 5 hrs (18000000 mili sec) code pauses for 5 hours after return to east morning start position at sundown 
+  }}
+
+    
